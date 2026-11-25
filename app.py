@@ -127,13 +127,19 @@ tab_sp, tab_ticket, tab_reporte = st.tabs([
 # ==========================================
 with tab_sp:
     st.caption(f"Archivo de datos: `{FILE_SERV_PREV}`")
-    df_actual = normalizar_df_sp(cargar_servicios_prev(FILE_SERV_PREV))
+
+    try:
+        raw_sp = cargar_servicios_prev(FILE_SERV_PREV)
+        df_actual = normalizar_df_sp(raw_sp)
+    except Exception as e:
+        st.warning(f"No se pudo leer el CSV previo ({e}). Se iniciará tabla vacía.")
+        df_actual = pd.DataFrame(columns=COLS_SP)
 
     st.subheader("Registros actuales en CSV")
     st.dataframe(df_actual, use_container_width=True, hide_index=True)
 
     def _limpios(col_name: str) -> list[str]:
-        if col_name not in df_actual.columns:
+        if df_actual is None or df_actual.empty or col_name not in df_actual.columns:
             return []
         vals = [
             str(v).strip()
@@ -147,7 +153,7 @@ with tab_sp:
     ecos_prev = _limpios("No_Economico")
 
     st.subheader("Nuevo registro de servicio preventivo")
-    st.caption("Selecciona datos existentes para reutilizarlos o elige **(Nuevo / Escribir)** para capturar uno nuevo.")
+    st.caption("Elige un dato existente para autocompletar o deja **(Nuevo / Escribir)** y escribe directo en el formulario.")
 
     s1, s2, s3 = st.columns(3)
     with s1:
@@ -169,9 +175,8 @@ with tab_sp:
             key="sp_veh_sel",
         )
 
-    # Valores sugeridos si se selecciona un No. Económico existente
     eco_cli_def, eco_veh_def, eco_anio_def, eco_ref_def, eco_tel_def = "", "", "", "", ""
-    if eco_sel != "(Nuevo / Escribir)" and "No_Economico" in df_actual.columns:
+    if eco_sel != "(Nuevo / Escribir)" and not df_actual.empty and "No_Economico" in df_actual.columns:
         coincidencias = df_actual[df_actual["No_Economico"].astype(str).str.strip() == eco_sel]
         if not coincidencias.empty:
             ult = coincidencias.iloc[-1]
@@ -190,7 +195,12 @@ with tab_sp:
         veh_inicial = eco_veh_def
 
     eco_inicial = "" if eco_sel == "(Nuevo / Escribir)" else eco_sel
-    folio_sugerido = siguiente_folio_sp(df_actual) or f"SP-{len(df_actual) + 1:02d}"
+
+    try:
+        folio_sugerido = siguiente_folio_sp(df_actual) or f"SP-{len(df_actual) + 1:02d}"
+    except Exception:
+        folio_sugerido = f"SP-{len(df_actual) + 1:02d}"
+
     hoy_str = dt.date.today().isoformat()
 
     with st.form("form_detalle_sp", clear_on_submit=True):
@@ -284,7 +294,6 @@ with tab_sp:
                     st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
                     st.success(f"Guardado **{folio_final}** — No. Económico: `{str(no_eco)}`")
                     st.rerun()
-
 # ==========================================
 # PESTAÑA 2: TICKET DE VENTA
 # ==========================================
