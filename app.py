@@ -74,6 +74,48 @@ def generar_ticket(datos: dict) -> str:
     return "\n".join(lineas)
 
 
+def _es_duplicado_reciente_vt(df_existente: pd.DataFrame, nuevo: dict) -> bool:
+    if df_existente.empty:
+        return False
+    ult = df_existente.iloc[-1]
+    campos_comparar = [
+        "Fecha_Venta",
+        "Cliente",
+        "Telefono",
+        "Vehiculo",
+        "No_Economico",
+        "Concepto",
+        "Refrigerante",
+        "Cantidad",
+        "Precio_Unitario",
+        "Total",
+        "Metodo_Pago",
+        "Estado_Pago",
+        "Observaciones",
+    ]
+    for campo in campos_comparar:
+        val_ult = str(ult.get(campo, "") or "").strip()
+        val_nuevo = str(nuevo.get(campo, "") or "").strip()
+        if campo in {"Cantidad"}:
+            try:
+                if int(float(val_ult or 0)) != int(float(val_nuevo or 0)):
+                    return False
+            except ValueError:
+                if val_ult != val_nuevo:
+                    return False
+        elif campo in {"Precio_Unitario", "Total"}:
+            try:
+                if round(float(val_ult or 0.0), 2) != round(float(val_nuevo or 0.0), 2):
+                    return False
+            except ValueError:
+                if val_ult != val_nuevo:
+                    return False
+        else:
+            if val_ult != val_nuevo:
+                return False
+    return True
+
+
 tab_sp, tab_ticket, tab_reporte = st.tabs([
     "Servicios Preventivos",
     "Ticket de Venta",
@@ -146,9 +188,9 @@ with tab_sp:
     veh_inicial = "" if veh_sel == "(Nuevo / Escribir)" else veh_sel
     if not veh_inicial and eco_veh_def and eco_veh_def.lower() != "nan":
         veh_inicial = eco_veh_def
-    folio_sugerido = siguiente_folio_sp(df_actual)
+
     eco_inicial = "" if eco_sel == "(Nuevo / Escribir)" else eco_sel
-    folio_sugerido = f"SP-{len(df_actual) + 1:02d}"
+    folio_sugerido = siguiente_folio_sp(df_actual) or f"SP-{len(df_actual) + 1:02d}"
     hoy_str = dt.date.today().isoformat()
 
     with st.form("form_detalle_sp", clear_on_submit=True):
@@ -210,11 +252,13 @@ with tab_sp:
         if enviar:
             if not cliente or not vehiculo:
                 st.error("Captura al menos **Cliente** y **Vehículo / Unidad**.")
-                folio_final = folio_prev if folio_prev else f"SP-{len(df_actual) + 1:02d}"
+            else:
+                df_base = normalizar_df_sp(cargar_servicios_prev(FILE_SERV_PREV))
+                folio_final = folio_prev if folio_prev else (siguiente_folio_sp(df_base) or f"SP-{len(df_base) + 1:02d}")
                 prox_final = proximo_servicio_manual
                 if not prox_final:
                     prox_final = calcular_proximo_servicio(fecha_servicio, int(meses_intervalo))
-                df_base = normalizar_df_sp(cargar_servicios_prev(FILE_SERV_PREV))
+
                 fila_dict = {col: "" for col in COLS_SP}
                 fila_dict.update({
                     "Folio_Prev": folio_final,
@@ -240,6 +284,7 @@ with tab_sp:
                     st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
                     st.success(f"Guardado **{folio_final}** — No. Económico: `{str(no_eco)}`")
                     st.rerun()
+
 # ==========================================
 # PESTAÑA 2: TICKET DE VENTA
 # ==========================================
@@ -268,33 +313,38 @@ with tab_ticket:
         obs_vt = st.text_input("Observaciones", placeholder="Opcional")
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
-        folio_limpio = folio_venta.strip() or folio_sugerido
-        total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
-        registro_vt = {
-            "Folio_Venta": folio_limpio,
-            "Folio_Referencia": "",
-            "Fecha_Venta": fecha_venta.isoformat(),
-            "Cliente": cliente_vt.strip(),
-            "Telefono": telefono_vt.strip(),
-            "Vehiculo": vehiculo_vt.strip(),
-            "No_Economico": str(no_eco_vt).strip(),
-            "Concepto": concepto_vt.strip(),
-            "Refrigerante": refrigerante_vt.strip(),
-            "Cantidad": int(cantidad_vt),
-            "Precio_Unitario": float(precio_unit_vt),
-            "Total": float(total_calc),
-            "Metodo_Pago": metodo_pago,
-            "Estado_Pago": estado_pago,
-            "Observaciones": obs_vt.strip(),
-        }
-        df_vt_fresh = normalizar_df_vt(cargar_ventas())
-        df_vt_nuevo = normalizar_df_vt(
-            pd.concat([df_vt_fresh, pd.DataFrame([registro_vt], columns=COLS_VT)], ignore_index=True)
-        )
-        guardar_ventas(df_vt_nuevo)
-        st.session_state["ticket_actual"] = generar_ticket(registro_vt)
-        st.session_state["folio_actual"] = folio_limpio
-        st.success(f"Ticket `{folio_limpio}` generado y guardado.")
+        if emitir:
+            df_vt_fresh = normalizar_df_vt(cargar_ventas())
+            folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
+            total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
+            registro_vt = {
+                "Folio_Venta": folio_limpio,
+                "Folio_Referencia": "",
+                "Fecha_Venta": fecha_venta.isoformat(),
+                "Cliente": cliente_vt.strip(),
+                "Telefono": telefono_vt.strip(),
+                "Vehiculo": vehiculo_vt.strip(),
+                "No_Economico": str(no_eco_vt).strip(),
+                "Concepto": concepto_vt.strip(),
+                "Refrigerante": refrigerante_vt.strip(),
+                "Cantidad": int(cantidad_vt),
+                "Precio_Unitario": float(precio_unit_vt),
+                "Total": float(total_calc),
+                "Metodo_Pago": metodo_pago,
+                "Estado_Pago": estado_pago,
+                "Observaciones": obs_vt.strip(),
+            }
+
+            if _es_duplicado_reciente_vt(df_vt_fresh, registro_vt):
+                st.warning("Se detectó un envío duplicado idéntico al último registro; no se guardó una segunda copia.")
+            else:
+                df_vt_nuevo = normalizar_df_vt(
+                    pd.concat([df_vt_fresh, pd.DataFrame([registro_vt], columns=COLS_VT)], ignore_index=True)
+                )
+                guardar_ventas(df_vt_nuevo)
+                st.session_state["ticket_actual"] = generar_ticket(registro_vt)
+                st.session_state["folio_actual"] = folio_limpio
+                st.success(f"Ticket `{folio_limpio}` generado y guardado.")
 
     if st.session_state["ticket_actual"]:
         st.divider()
@@ -348,6 +398,7 @@ with tab_reporte:
         df_tabla = df_dia
     elif vista_modo == "Venta mensual":
         df_tabla = df_mes
+    else:
         df_tabla = df_rep.drop(columns=["_fecha", "_mes"])
 
     st.dataframe(df_tabla, use_container_width=True, hide_index=True)
