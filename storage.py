@@ -1,3 +1,4 @@
+import datetime as dt
 from pathlib import Path
 import re
 import pandas as pd
@@ -167,6 +168,7 @@ def siguiente_folio_sp(df_sp: pd.DataFrame, prefijo: str = "SP-") -> str:
             if m:
                 max_num = max(max_num, int(m.group(1)))
     return f"{prefijo}{max_num + 1:02d}"
+
 
 def siguiente_folio_vt(df_vt: pd.DataFrame, prefijo: str = "V-") -> str:
     max_num = 0
