@@ -331,7 +331,7 @@ with st.form("form_ticket_venta", clear_on_submit=True):
         obs_vt = st.text_input("Observaciones", placeholder="Opcional")
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
-            if emitir:
+        if emitir:
                 df_vt_fresh = normalizar_df_vt(cargar_ventas())
                 folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
                 total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
