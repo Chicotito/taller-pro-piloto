@@ -311,7 +311,7 @@ with tab_ticket:
     df_vt_actual = normalizar_df_vt(cargar_ventas())
     folio_sugerido = siguiente_folio_vt(df_vt_actual)
 
-    with st.form("form_ticket_venta", clear_on_submit=True):
+with st.form("form_ticket_venta", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             folio_venta = st.text_input("Folio", value=folio_sugerido)
