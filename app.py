@@ -311,7 +311,7 @@ with tab_ticket:
     df_vt_actual = normalizar_df_vt(cargar_ventas())
     folio_sugerido = siguiente_folio_vt(df_vt_actual)
 
-with st.form("form_ticket_venta", clear_on_submit=True):
+    with st.form("form_ticket_venta", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             folio_venta = st.text_input("Folio", value=folio_sugerido)
@@ -332,28 +332,87 @@ with st.form("form_ticket_venta", clear_on_submit=True):
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
         if emitir:
-                df_vt_fresh = normalizar_df_vt(cargar_ventas())
-                folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
-                total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
-                registro_vt = {
-                    "Folio_Venta": folio_limpio,
-                    "Folio_Referencia": "",
-                    "Fecha_Venta": fecha_venta.isoformat(),
-                    "Cliente": cliente_vt.strip(),
-                    "Telefono": telefono_vt.strip(),
-                    "Vehiculo": vehiculo_vt.strip(),
-                    "No_Economico": str(no_eco_vt).strip(),
-                    "Concepto": concepto_vt.strip(),
-                    "Refrigerante": refrigerante_vt.strip(),
-                    "Cantidad": int(cantidad_vt),
-                    "Precio_Unitario": float(precio_unit_vt),
-                    "Total": float(total_calc),
-                    "Metodo_Pago": metodo_pago,
-                    "Estado_Pago": estado_pago,
-                    "Observaciones": obs_vt.strip(),
-                }
+            df_vt_fresh = normalizar_df_vt(cargar_ventas())
+            folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
+            total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
+            registro_vt = {
+                "Folio_Venta": folio_limpio,
+                "Folio_Referencia": "",
+                "Fecha_Venta": fecha_venta.isoformat(),
+                "Cliente": cliente_vt.strip(),
+                "Telefono": telefono_vt.strip(),
                 "Vehiculo": vehiculo_vt.strip(),
                 "No_Economico": str(no_eco_vt).strip(),
                 "Concepto": concepto_vt.strip(),
                 "Refrigerante": refrigerante_vt.strip(),
                 "Cantidad": int(cantidad_vt),
+                "Precio_Unitario": float(precio_unit_vt),
+                "Total": float(total_calc),
+                "Metodo_Pago": metodo_pago,
+                "Estado_Pago": estado_pago,
+                "Observaciones": obs_vt.strip(),
+            }
+
+            if _es_duplicado_reciente_vt(df_vt_fresh, registro_vt):
+                st.warning("Se detectó un envío duplicado idéntico al último registro; no se guardó una segunda copia.")
+            else:
+                df_vt_nuevo = normalizar_df_vt(
+                    pd.concat([df_vt_fresh, pd.DataFrame([registro_vt], columns=COLS_VT)], ignore_index=True)
+                )
+                guardar_ventas(df_vt_nuevo)
+                st.session_state["ticket_actual"] = generar_ticket(registro_vt)
+                st.session_state["folio_actual"] = folio_limpio
+                st.success(f"Ticket `{folio_limpio}` generado y guardado.")
+
+    if st.session_state["ticket_actual"]:
+        st.divider()
+        st.code(st.session_state["ticket_actual"], language="text")
+        st.download_button(
+            label="Descargar ticket (.txt)",
+            data=st.session_state["ticket_actual"].encode("utf-8"),
+            file_name=f"ticket_{st.session_state['folio_actual']}.txt",
+            mime="text/plain",
+        )
+
+# ==========================================
+# PESTAÑA 3: VENTAS (DÍA / MENSUAL)
+# ==========================================
+with tab_reporte:
+    st.subheader("Corte y Resumen de Ventas")
+    df_rep = normalizar_df_vt(cargar_ventas()).copy()
+    fechas_parseadas = pd.to_datetime(df_rep["Fecha_Venta"], errors="coerce")
+    df_rep["_fecha"] = fechas_parseadas.dt.date
+    df_rep["_mes"] = fechas_parseadas.dt.strftime("%Y-%m").fillna("")
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        dia_consulta = st.date_input("Día a consultar", value=dt.date.today())
+    with col_f2:
+        meses_disponibles = sorted([m for m in df_rep["_mes"].unique() if m], reverse=True)
+        mes_actual_str = dia_consulta.strftime("%Y-%m")
+        if mes_actual_str not in meses_disponibles:
+            meses_disponibles = [mes_actual_str] + meses_disponibles
+        mes_consulta = st.selectbox("Mes a consultar", options=meses_disponibles, index=0)
+
+    df_dia = df_rep[df_rep["_fecha"] == dia_consulta].drop(columns=["_fecha", "_mes"])
+    df_mes = df_rep[df_rep["_mes"] == mes_consulta].drop(columns=["_fecha", "_mes"])
+
+    total_dia = float(df_dia["Total"].sum()) if not df_dia.empty else 0.0
+    total_mes = float(df_mes["Total"].sum()) if not df_mes.empty else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(f"Venta del día ({dia_consulta.isoformat()})", f"${total_dia:,.2f}")
+    m2.metric("Tickets del día", len(df_dia))
+    m3.metric(f"Venta mensual ({mes_consulta})", f"${total_mes:,.2f}")
+    m4.metric("Tickets del mes", len(df_mes))
+
+    vista_modo = st.radio(
+        "Ver detalle de:",
+        ["Venta del día", "Venta mensual", "Todas las ventas"],
+        horizontal=True,
+    )
+
+    if vista_modo == "Venta del día":
+        df_tabla = df_dia
+    elif vista_modo == "Venta mensual":
+        df_tabla = df_mes
