@@ -1,12 +1,17 @@
+import base64
 import datetime as dt
+import json
 from pathlib import Path
 import re
+import urllib.error
+import urllib.request
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 FILE_SERV_PREV = DATA_DIR / "servicios_preventivos.csv"
+FILE_VENTAS = DATA_DIR / "ventas.csv"
 
 COLS_SP = [
     "Folio_Prev",
@@ -25,6 +30,82 @@ COLS_SP = [
     "Monto",
     "Observaciones",
 ]
+
+COLS_VT = [
+    "Folio_Venta",
+    "Folio_Referencia",
+    "Fecha_Venta",
+    "Cliente",
+    "Telefono",
+    "Vehiculo",
+    "No_Economico",
+    "Concepto",
+    "Refrigerante",
+    "Cantidad",
+    "Precio_Unitario",
+    "Total",
+    "Metodo_Pago",
+    "Estado_Pago",
+    "Observaciones",
+]
+
+
+def _sincronizar_a_github(ruta_local: Path, contenido_texto: str, mensaje_commit: str) -> None:
+    try:
+        import streamlit as st
+        secrets = st.secrets
+    except Exception:
+        return
+
+    token = secrets.get("GITHUB_TOKEN", "")
+    repo = secrets.get("GITHUB_REPO", "")
+    branch = secrets.get("GITHUB_BRANCH", "main")
+    if not token or not repo:
+        return
+
+    try:
+        ruta_repo = ruta_local.resolve().relative_to(BASE_DIR.resolve()).as_posix()
+    except ValueError:
+        ruta_repo = f"data/{ruta_local.name}"
+
+    url = f"https://api.github.com/repos/{repo}/contents/{ruta_repo}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "taller-pro-app",
+    }
+
+    sha = None
+    try:
+        req_get = urllib.request.Request(f"{url}?ref={branch}", headers=headers, method="GET")
+        with urllib.request.urlopen(req_get, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            sha = data.get("sha")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            return
+    except Exception:
+        return
+
+    payload = {
+        "message": mensaje_commit,
+        "content": base64.b64encode(contenido_texto.encode("utf-8-sig")).decode("ascii"),
+        "branch": branch,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        req_put = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"},
+            method="PUT",
+        )
+        with urllib.request.urlopen(req_put, timeout=15):
+            pass
+    except Exception:
+        pass
 
 
 def normalizar_df_sp(df_in: pd.DataFrame) -> pd.DataFrame:
@@ -67,30 +148,12 @@ def guardar_servicios_prev(df_g: pd.DataFrame, ruta_csv: Path = FILE_SERV_PREV) 
     ruta = Path(ruta_csv)
     df_limpio = normalizar_df_sp(df_g)
     try:
-        df_limpio.to_csv(ruta, index=False, encoding="utf-8-sig")
+        csv_texto = df_limpio.to_csv(index=False, encoding="utf-8-sig")
+        ruta.write_text(csv_texto, encoding="utf-8-sig")
+        _sincronizar_a_github(ruta, csv_texto, f"Actualizar {ruta.name}")
         return True
     except OSError:
         return False
-
-FILE_VENTAS = DATA_DIR / "ventas.csv"
-
-COLS_VT = [
-    "Folio_Venta",
-    "Folio_Referencia",
-    "Fecha_Venta",
-    "Cliente",
-    "Telefono",
-    "Vehiculo",
-    "No_Economico",
-    "Concepto",
-    "Refrigerante",
-    "Cantidad",
-    "Precio_Unitario",
-    "Total",
-    "Metodo_Pago",
-    "Estado_Pago",
-    "Observaciones",
-]
 
 
 def normalizar_df_vt(df_in: pd.DataFrame) -> pd.DataFrame:
@@ -136,7 +199,9 @@ def guardar_ventas(df_g: pd.DataFrame, ruta_csv: Path = FILE_VENTAS) -> bool:
     ruta_f = Path(ruta_csv)
     df_limpio = normalizar_df_vt(df_g)
     try:
-        df_limpio.to_csv(ruta_f, index=False, encoding="utf-8-sig")
+        csv_texto = df_limpio.to_csv(index=False, encoding="utf-8-sig")
+        ruta_f.write_text(csv_texto, encoding="utf-8-sig")
+        _sincronizar_a_github(ruta_f, csv_texto, f"Actualizar {ruta_f.name}")
         return True
     except OSError:
         return False
