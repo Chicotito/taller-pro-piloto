@@ -328,10 +328,8 @@ with tab_ticket:
             metodo_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Tarjeta", "Crédito"])
             estado_pago = st.selectbox("Estado", ["Pagado", "Pendiente", "Abono"])
 
-        obs_vt = st.text_input("Observaciones", placeholder="Opcional")
+       obs_vt = st.text_input("Observaciones", placeholder="Opcional")
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
-
-      emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
             if emitir:
                 df_vt_fresh = normalizar_df_vt(cargar_ventas())
