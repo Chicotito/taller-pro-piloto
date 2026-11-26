@@ -3,14 +3,19 @@ import pandas as pd
 import streamlit as st
 
 from storage import (
+    COLS_INV,
     COLS_SP,
     COLS_VT,
+    FILE_INV,
     FILE_SERV_PREV,
+    cargar_inventario,
     cargar_servicios_prev,
     cargar_ventas,
+    guardar_inventario,
     guardar_servicios_prev,
     guardar_ventas,
     calcular_proximo_servicio,
+    normalizar_df_inv,
     normalizar_df_sp,
     siguiente_folio_sp,
     siguiente_folio_vt,
@@ -19,6 +24,8 @@ from storage import (
 
 st.set_page_config(page_title="Taller Olachea - App", layout="wide")
 st.title("Taller Olachea — Sistema de Gestión")
+
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "1234") if hasattr(st, "secrets") else "1234"
 
 if "df_serv_prev" not in st.session_state:
     st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
@@ -116,10 +123,11 @@ def _es_duplicado_reciente_vt(df_existente: pd.DataFrame, nuevo: dict) -> bool:
     return True
 
 
-tab_sp, tab_ticket, tab_reporte = st.tabs([
+tab_sp, tab_ticket, tab_reporte, tab_inv = st.tabs([
     "Servicios Preventivos",
     "Ticket de Venta",
     "Ventas (Día / Mensual)",
+    "Inventario",
 ])
 
 # ==========================================
@@ -231,183 +239,4 @@ with tab_sp:
                 placeholder="Ej. 2024",
             ).strip()
             servicio_prev = st.text_input(
-                "Servicio Preventivo",
-                placeholder="Ej. Carga completa de gas refrigerante",
-            ).strip()
-            fecha_servicio = st.text_input("Fecha Servicio (YYYY-MM-DD)", value=hoy_str).strip()
-            proximo_servicio_manual = st.text_input(
-                "Próximo Servicio (opcional, auto si queda vacío)",
-                value="",
-                placeholder="YYYY-MM-DD (se calcula automáticamente)",
-            ).strip()
-
-        with c3:
-            no_eco = st.text_input(
-                "No. Económico",
-                value=eco_inicial,
-                placeholder="Ej. 093, SB-014, U-97",
-            ).strip()
-            kilometraje = st.text_input("Kilometraje", placeholder="Ej. 85000").strip()
-            estado = st.selectbox(
-                "Estado",
-                ["Programado", "En proceso", "Completado", "Pendiente", "Vencido"],
-                index=0,
-            )
-            monto = st.number_input("Monto ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f")
-
-        observaciones = st.text_area("Observaciones", height=75, placeholder="Detalles del diagnóstico o servicio...").strip()
-
-        enviar = st.form_submit_button("Guardar registro preventivo", type="primary")
-
-        if enviar:
-            if not cliente or not vehiculo:
-                st.error("Captura al menos **Cliente** y **Vehículo / Unidad**.")
-            else:
-                df_base = normalizar_df_sp(cargar_servicios_prev(FILE_SERV_PREV))
-                folio_final = folio_prev if folio_prev else (siguiente_folio_sp(df_base) or f"SP-{len(df_base) + 1:02d}")
-                prox_final = proximo_servicio_manual
-                if not prox_final:
-                    prox_final = calcular_proximo_servicio(fecha_servicio, int(meses_intervalo))
-
-                fila_dict = {col: "" for col in COLS_SP}
-                fila_dict.update({
-                    "Folio_Prev": folio_final,
-                    "Cliente": cliente,
-                    "Telefono": telefono,
-                    "Vehiculo": vehiculo,
-                    "Anio": anio,
-                    "No_Economico": str(no_eco),
-                    "Refrigerante": refrigerante,
-                    "Servicio_Preventivo": servicio_prev,
-                    "Fecha_Servicio": fecha_servicio,
-                    "Meses_Intervalo": int(meses_intervalo),
-                    "Proximo_Servicio": prox_final,
-                    "Kilometraje": kilometraje,
-                    "Estado": estado,
-                    "Monto": float(monto),
-                    "Observaciones": observaciones,
-                })
-                nueva_fila = pd.DataFrame([fila_dict], columns=COLS_SP)
-                df_nuevo = pd.concat([df_base, nueva_fila], ignore_index=True)
-
-                if guardar_servicios_prev(df_nuevo, FILE_SERV_PREV):
-                    st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
-                    st.success(f"Guardado **{folio_final}** — No. Económico: `{str(no_eco)}`")
-                    st.rerun()
-# ==========================================
-# PESTAÑA 2: TICKET DE VENTA
-# ==========================================
-with tab_ticket:
-    st.subheader("Emitir Ticket de Venta")
-    df_vt_actual = normalizar_df_vt(cargar_ventas())
-    folio_sugerido = siguiente_folio_vt(df_vt_actual)
-
-    with st.form("form_ticket_venta", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            folio_venta = st.text_input("Folio", value=folio_sugerido)
-            fecha_venta = st.date_input("Fecha", value=dt.date.today())
-            cliente_vt = st.text_input("Cliente", placeholder="Ej. Transportes del Pacífico")
-            telefono_vt = st.text_input("Teléfono", placeholder="Ej. 6121234567")
-            vehiculo_vt = st.text_input("Unidad / Vehículo", placeholder="Ej. Freightliner M2")
-            no_eco_vt = st.text_input("No. Económico", placeholder="Ej. 005")
-        with c2:
-            concepto_vt = st.text_input("Concepto", placeholder="Ej. Carga refrigerante y revisión")
-            refrigerante_vt = st.text_input("Refrigerante", placeholder="Ej. R134a / R404A")
-            cantidad_vt = st.number_input("Cantidad", min_value=1, max_value=999, value=1, step=1)
-            precio_unit_vt = st.number_input("Precio Unitario ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f")
-            metodo_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Tarjeta", "Crédito"])
-            estado_pago = st.selectbox("Estado", ["Pagado", "Pendiente", "Abono"])
-
-        obs_vt = st.text_input("Observaciones", placeholder="Opcional")
-        emitir = st.form_submit_button("Generar ticket de venta", type="primary")
-
-        if emitir:
-            df_vt_fresh = normalizar_df_vt(cargar_ventas())
-            folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
-            total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
-            registro_vt = {
-                "Folio_Venta": folio_limpio,
-                "Folio_Referencia": "",
-                "Fecha_Venta": fecha_venta.isoformat(),
-                "Cliente": cliente_vt.strip(),
-                "Telefono": telefono_vt.strip(),
-                "Vehiculo": vehiculo_vt.strip(),
-                "No_Economico": str(no_eco_vt).strip(),
-                "Concepto": concepto_vt.strip(),
-                "Refrigerante": refrigerante_vt.strip(),
-                "Cantidad": int(cantidad_vt),
-                "Precio_Unitario": float(precio_unit_vt),
-                "Total": float(total_calc),
-                "Metodo_Pago": metodo_pago,
-                "Estado_Pago": estado_pago,
-                "Observaciones": obs_vt.strip(),
-            }
-
-            if _es_duplicado_reciente_vt(df_vt_fresh, registro_vt):
-                st.warning("Se detectó un envío duplicado idéntico al último registro; no se guardó una segunda copia.")
-            else:
-                df_vt_nuevo = normalizar_df_vt(
-                    pd.concat([df_vt_fresh, pd.DataFrame([registro_vt], columns=COLS_VT)], ignore_index=True)
-                )
-                guardar_ventas(df_vt_nuevo)
-                st.session_state["ticket_actual"] = generar_ticket(registro_vt)
-                st.session_state["folio_actual"] = folio_limpio
-                st.success(f"Ticket `{folio_limpio}` generado y guardado.")
-
-    if st.session_state["ticket_actual"]:
-        st.divider()
-        st.code(st.session_state["ticket_actual"], language="text")
-        st.download_button(
-            label="Descargar ticket (.txt)",
-            data=st.session_state["ticket_actual"].encode("utf-8"),
-            file_name=f"ticket_{st.session_state['folio_actual']}.txt",
-            mime="text/plain",
-        )
-
-# ==========================================
-# PESTAÑA 3: VENTAS (DÍA / MENSUAL)
-# ==========================================
-with tab_reporte:
-    st.subheader("Corte y Resumen de Ventas")
-    df_rep = normalizar_df_vt(cargar_ventas()).copy()
-    fechas_parseadas = pd.to_datetime(df_rep["Fecha_Venta"], errors="coerce")
-    df_rep["_fecha"] = fechas_parseadas.dt.date
-    df_rep["_mes"] = fechas_parseadas.dt.strftime("%Y-%m").fillna("")
-
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        dia_consulta = st.date_input("Día a consultar", value=dt.date.today())
-    with col_f2:
-        meses_disponibles = sorted([m for m in df_rep["_mes"].unique() if m], reverse=True)
-        mes_actual_str = dia_consulta.strftime("%Y-%m")
-        if mes_actual_str not in meses_disponibles:
-            meses_disponibles = [mes_actual_str] + meses_disponibles
-        mes_consulta = st.selectbox("Mes a consultar", options=meses_disponibles, index=0)
-
-    df_dia = df_rep[df_rep["_fecha"] == dia_consulta].drop(columns=["_fecha", "_mes"])
-    df_mes = df_rep[df_rep["_mes"] == mes_consulta].drop(columns=["_fecha", "_mes"])
-
-    total_dia = float(df_dia["Total"].sum()) if not df_dia.empty else 0.0
-    total_mes = float(df_mes["Total"].sum()) if not df_mes.empty else 0.0
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(f"Venta del día ({dia_consulta.isoformat()})", f"${total_dia:,.2f}")
-    m2.metric("Tickets del día", len(df_dia))
-    m3.metric(f"Venta mensual ({mes_consulta})", f"${total_mes:,.2f}")
-    m4.metric("Tickets del mes", len(df_mes))
-
-    vista_modo = st.radio(
-        "Ver detalle de:",
-        ["Venta del día", "Venta mensual", "Todas las ventas"],
-        horizontal=True,
-    )
-
-    if vista_modo == "Venta del día":
-        df_tabla = df_dia
-    elif vista_modo == "Venta mensual":
-        df_tabla = df_mes
-    else:
-        df_tabla = df_rep.drop(columns=["_fecha", "_mes"])
-
-    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                "Servicio Prevent
