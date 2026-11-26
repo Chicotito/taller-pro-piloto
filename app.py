@@ -331,11 +331,11 @@ with tab_ticket:
         obs_vt = st.text_input("Observaciones", placeholder="Opcional")
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
-        if emitir:
+       if emitir:
             df_vt_fresh = normalizar_df_vt(cargar_ventas())
             folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
             total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
-           registro_vt = {
+            registro_vt = {
                 "Folio_Venta": folio_limpio,
                 "Folio_Referencia": "",
                 "Fecha_Venta": fecha_venta.isoformat(),
