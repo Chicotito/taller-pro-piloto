@@ -1,3 +1,4 @@
 ﻿Folio_Prev,Cliente,Telefono,Vehiculo,Anio,No_Economico,Refrigerante,Servicio_Preventivo,Fecha_Servicio,Meses_Intervalo,Proximo_Servicio,Kilometraje,Estado,Monto,Observaciones
 SP-01,roca,,ram,,sa05,,,2026-11-26,3,2027-02-26,,Programado,0.0,
 SP-02,sec salud,,ranger,,093,,,2026-11-26,3,2027-02-26,,Programado,0.0,
+SP-03,sepsa,,FORD-350,2021,55370,,cARGA DE GAS,2026-11-26,3,2027-02-26,,Programado,1500.0,
