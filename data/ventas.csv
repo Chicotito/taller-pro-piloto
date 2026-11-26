@@ -1,0 +1,7 @@
+﻿Folio_Venta,Folio_Referencia,Fecha_Venta,Cliente,Telefono,Vehiculo,No_Economico,Concepto,Refrigerante,Cantidad,Precio_Unitario,Total,Metodo_Pago,Estado_Pago,Observaciones
+V-01,,2026-11-26,contado,,,,Mnaguera,,1,550.0,550.0,Efectivo,Pagado,
+V-02,,2026-11-26,contado,,RANGER,,,,1,13568.69,13568.69,Efectivo,Pagado,
+V-03,,2026-11-26,,,,,,,1,0.0,0.0,Efectivo,Pagado,
+V-04,,2026-11-26,CONTADO,,,,CARGA DE GAS,,1,450.0,450.0,Transferencia,Pagado,
+V-05,,2026-11-26,CONTADO,,JETTA,025,CARGA GAS,,1,450.0,450.0,Efectivo,Pagado,
+V-06,,2026-11-26,contado,,,093,Compresor,,1,3850.0,3850.0,Efectivo,Pagado,
