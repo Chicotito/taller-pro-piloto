@@ -331,27 +331,29 @@ with tab_ticket:
         obs_vt = st.text_input("Observaciones", placeholder="Opcional")
         emitir = st.form_submit_button("Generar ticket de venta", type="primary")
 
-       if emitir:
-            df_vt_fresh = normalizar_df_vt(cargar_ventas())
-            folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
-            total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
-            registro_vt = {
-                "Folio_Venta": folio_limpio,
-                "Folio_Referencia": "",
-                "Fecha_Venta": fecha_venta.isoformat(),
-                "Cliente": cliente_vt.strip(),
-                "Telefono": telefono_vt.strip(),
-                "Vehiculo": vehiculo_vt.strip(),
-                "No_Economico": str(no_eco_vt).strip(),
-                "Concepto": concepto_vt.strip(),
-                "Refrigerante": refrigerante_vt.strip(),
-                "Cantidad": int(cantidad_vt),
-                "Precio_Unitario": float(precio_unit_vt),
-                "Total": float(total_calc),
-                "Metodo_Pago": metodo_pago,
-                "Estado_Pago": estado_pago,
-                "Observaciones": obs_vt.strip(),
-            }
+      emitir = st.form_submit_button("Generar ticket de venta", type="primary")
+
+            if emitir:
+                df_vt_fresh = normalizar_df_vt(cargar_ventas())
+                folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
+                total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
+                registro_vt = {
+                    "Folio_Venta": folio_limpio,
+                    "Folio_Referencia": "",
+                    "Fecha_Venta": fecha_venta.isoformat(),
+                    "Cliente": cliente_vt.strip(),
+                    "Telefono": telefono_vt.strip(),
+                    "Vehiculo": vehiculo_vt.strip(),
+                    "No_Economico": str(no_eco_vt).strip(),
+                    "Concepto": concepto_vt.strip(),
+                    "Refrigerante": refrigerante_vt.strip(),
+                    "Cantidad": int(cantidad_vt),
+                    "Precio_Unitario": float(precio_unit_vt),
+                    "Total": float(total_calc),
+                    "Metodo_Pago": metodo_pago,
+                    "Estado_Pago": estado_pago,
+                    "Observaciones": obs_vt.strip(),
+                }
                 "Vehiculo": vehiculo_vt.strip(),
                 "No_Economico": str(no_eco_vt).strip(),
                 "Concepto": concepto_vt.strip(),
