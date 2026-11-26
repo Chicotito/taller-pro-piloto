@@ -57,10 +57,12 @@ def _sincronizar_a_github(ruta_local: Path, contenido_texto: str, mensaje_commit
     except Exception:
         return
 
-    token = secrets.get("GITHUB_TOKEN", "")
-    repo = secrets.get("GITHUB_REPO", "")
-    branch = secrets.get("GITHUB_BRANCH", "main")
+    token = str(secrets.get("GITHUB_TOKEN", "")).strip()
+    repo = str(secrets.get("GITHUB_REPO", "")).strip()
+    branch = str(secrets.get("GITHUB_BRANCH", "main")).strip() or "main"
+
     if not token or not repo:
+        st.warning("Sincronización GitHub omitida: falta GITHUB_TOKEN o GITHUB_REPO en Secrets.")
         return
 
     try:
@@ -83,8 +85,10 @@ def _sincronizar_a_github(ruta_local: Path, contenido_texto: str, mensaje_commit
             sha = data.get("sha")
     except urllib.error.HTTPError as e:
         if e.code != 404:
+            st.warning(f"Error consultando archivo en GitHub ({e.code}): {e.reason}")
             return
-    except Exception:
+    except Exception as e:
+        st.warning(f"Error de red al consultar GitHub: {e}")
         return
 
     payload = {
@@ -104,8 +108,11 @@ def _sincronizar_a_github(ruta_local: Path, contenido_texto: str, mensaje_commit
         )
         with urllib.request.urlopen(req_put, timeout=15):
             pass
-    except Exception:
-        pass
+    except urllib.error.HTTPError as e:
+        detalle = e.read().decode("utf-8", errors="ignore")
+        st.error(f"GitHub rechazó el guardado ({e.code}): {detalle[:220]}")
+    except Exception as e:
+        st.error(f"Error enviando datos a GitHub: {e}")
 
 
 def normalizar_df_sp(df_in: pd.DataFrame) -> pd.DataFrame:
