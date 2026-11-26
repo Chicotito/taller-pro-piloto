@@ -242,3 +242,107 @@ with tab_sp:
                 "Servicio Preventivo",
                 placeholder="Ej. Carga completa de gas refrigerante",
             ).strip()
+            fecha_servicio = st.text_input("Fecha Servicio (YYYY-MM-DD)", value=hoy_str).strip()
+            proximo_servicio_manual = st.text_input(
+                "Próximo Servicio (opcional, auto si queda vacío)",
+                value="",
+                placeholder="YYYY-MM-DD (se calcula automáticamente)",
+            ).strip()
+
+        with c3:
+            no_eco = st.text_input(
+                "No. Económico",
+                value=eco_inicial,
+                placeholder="Ej. 093, SB-014, U-97",
+            ).strip()
+            kilometraje = st.text_input("Kilometraje", placeholder="Ej. 85000").strip()
+            estado = st.selectbox(
+                "Estado",
+                ["Programado", "En proceso", "Completado", "Pendiente", "Vencido"],
+                index=0,
+            )
+            monto = st.number_input("Monto ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f")
+
+        observaciones = st.text_area("Observaciones", height=75, placeholder="Detalles del diagnóstico o servicio...").strip()
+
+        enviar = st.form_submit_button("Guardar registro preventivo", type="primary")
+
+        if enviar:
+            if not cliente or not vehiculo:
+                st.error("Captura al menos **Cliente** y **Vehículo / Unidad**.")
+            else:
+                df_base = normalizar_df_sp(cargar_servicios_prev(FILE_SERV_PREV))
+                folio_final = folio_prev if folio_prev else (siguiente_folio_sp(df_base) or f"SP-{len(df_base) + 1:02d}")
+                prox_final = proximo_servicio_manual
+                if not prox_final:
+                    prox_final = calcular_proximo_servicio(fecha_servicio, int(meses_intervalo))
+
+                fila_dict = {col: "" for col in COLS_SP}
+                fila_dict.update({
+                    "Folio_Prev": folio_final,
+                    "Cliente": cliente,
+                    "Telefono": telefono,
+                    "Vehiculo": vehiculo,
+                    "Anio": anio,
+                    "No_Economico": str(no_eco),
+                    "Refrigerante": refrigerante,
+                    "Servicio_Preventivo": servicio_prev,
+                    "Fecha_Servicio": fecha_servicio,
+                    "Meses_Intervalo": int(meses_intervalo),
+                    "Proximo_Servicio": prox_final,
+                    "Kilometraje": kilometraje,
+                    "Estado": estado,
+                    "Monto": float(monto),
+                    "Observaciones": observaciones,
+                })
+                nueva_fila = pd.DataFrame([fila_dict], columns=COLS_SP)
+                df_nuevo = pd.concat([df_base, nueva_fila], ignore_index=True)
+
+                if guardar_servicios_prev(df_nuevo, FILE_SERV_PREV):
+                    st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
+                    st.success(f"Guardado **{folio_final}** — No. Económico: `{str(no_eco)}`")
+                    st.rerun()
+
+# ==========================================
+# PESTAÑA 2: TICKET DE VENTA
+# ==========================================
+with tab_ticket:
+    st.subheader("Emitir Ticket de Venta")
+    df_vt_actual = normalizar_df_vt(cargar_ventas())
+    folio_sugerido = siguiente_folio_vt(df_vt_actual)
+
+    with st.form("form_ticket_venta", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            folio_venta = st.text_input("Folio", value=folio_sugerido)
+            fecha_venta = st.date_input("Fecha", value=dt.date.today())
+            cliente_vt = st.text_input("Cliente", placeholder="Ej. Transportes del Pacífico")
+            telefono_vt = st.text_input("Teléfono", placeholder="Ej. 6121234567")
+            vehiculo_vt = st.text_input("Unidad / Vehículo", placeholder="Ej. Freightliner M2")
+            no_eco_vt = st.text_input("No. Económico", placeholder="Ej. 005")
+        with c2:
+            concepto_vt = st.text_input("Concepto", placeholder="Ej. Carga refrigerante y revisión")
+            refrigerante_vt = st.text_input("Refrigerante", placeholder="Ej. R134a / R404A")
+            cantidad_vt = st.number_input("Cantidad", min_value=1, max_value=999, value=1, step=1)
+            precio_unit_vt = st.number_input("Precio Unitario ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f")
+            metodo_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Tarjeta", "Crédito"])
+            estado_pago = st.selectbox("Estado", ["Pagado", "Pendiente", "Abono"])
+
+        obs_vt = st.text_input("Observaciones", placeholder="Opcional")
+        emitir = st.form_submit_button("Generar ticket de venta", type="primary")
+
+        if emitir:
+            df_vt_fresh = normalizar_df_vt(cargar_ventas())
+            folio_limpio = folio_venta.strip() or siguiente_folio_vt(df_vt_fresh)
+            total_calc = round(int(cantidad_vt) * float(precio_unit_vt), 2)
+            registro_vt = {
+                "Folio_Venta": folio_limpio,
+                "Folio_Referencia": "",
+                "Fecha_Venta": fecha_venta.isoformat(),
+                "Cliente": cliente_vt.strip(),
+                "Telefono": telefono_vt.strip(),
+                "Vehiculo": vehiculo_vt.strip(),
+                "No_Economico": str(no_eco_vt).strip(),
+                "Concepto": concepto_vt.strip(),
+                "Refrigerante": refrigerante_vt.strip(),
+                "Cantidad": int(cantidad_vt),
