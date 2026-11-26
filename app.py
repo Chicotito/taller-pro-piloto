@@ -239,4 +239,6 @@ with tab_sp:
                 placeholder="Ej. 2024",
             ).strip()
             servicio_prev = st.text_input(
-                "Servicio Prevent
+                "Servicio Preventivo",
+                placeholder="Ej. Carga completa de gas refrigerante",
+            ).strip()
