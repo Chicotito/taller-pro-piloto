@@ -1,15 +1,16 @@
 ﻿Código,Producto,Familia,Stock,Costo,Precio Venta
-SKU-001,Filtro Cabina A/C,Filtros,15,120,192
-GAS-134A,Refrigerante R134a,Refrigerantes,8,1450,2320
-VM-0853C,Válvula Mecanica,Válvulas,4,150,300
-VM-10471,Válvula Mecanica,Válvulas,5,180,360
-VE-10489,Válvula Electo Mecanica,Válvulas,1,470,850
-VE-10523,Válvula Electo Mecanica,Válvulas,4,470,850
-VE-10542,Válvula Electo Mecanica,Válvulas,2,470,850
-VE-10643,Válvula Electo Mecanica,Válvulas,5,470,850
-SW4904R,Switch de Baja Precion,Switch,1,130,260
-CSB-10123BC,Filtro de Silica 20 CM,Filtros,32,40,150
-CSB-10124BC,Filtro de Silica 24 CM,Filtros,14,40,150
-SR-01000C,Switch de 3 Velcidades,Switch,3,85,200
-TC-3004C,Termostato Universal 48 CM,Termostato,15,100,220
-TC 3005C,Termostato Universal 66 CM,General,15,100,220
+SKU-001,Filtro Cabina A/C,Filtros,15.0,120.0,192.0
+GAS-134A,Refrigerante R134a,Refrigerantes,8.0,1450.0,2320.0
+VM-0853C,Válvula Mecanica,Válvulas,4.0,150.0,300.0
+VM-10471,Válvula Mecanica,Válvulas,5.0,180.0,360.0
+VE-10489,Válvula Electo Mecanica,Válvulas,1.0,470.0,850.0
+VE-10523,Válvula Electo Mecanica,Válvulas,4.0,470.0,850.0
+VE-10542,Válvula Electo Mecanica,Válvulas,2.0,470.0,850.0
+VE-10643,Válvula Electo Mecanica,Válvulas,5.0,470.0,850.0
+SW4904R,Switch de Baja Precion,Switch,1.0,130.0,260.0
+CSB-10123BC,Filtro de Silica 20 CM,Filtros,32.0,40.0,150.0
+CSB-10124BC,Filtro de Silica 24 CM,Filtros,14.0,40.0,150.0
+SR-01000C,Switch de 3 Velcidades,Switch,3.0,85.0,200.0
+TC-3004C,Termostato Universal 48 CM,Termostato,15.0,100.0,220.0
+TC 3005C,Termostato Universal 66 CM,General,15.0,100.0,220.0
+R-134 MINA 13 KG,Gas Refrigerante,Quimicos,2.0,2750.0,4400.0
