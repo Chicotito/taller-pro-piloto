@@ -505,6 +505,8 @@ with tab_inv:
 
     with tab_i1:
         st.subheader("Consultar y Editar Inventario")
+        st.caption("Edita Stock, Costo o Precio Venta directo en la tabla (el Precio Venta se respeta tal como lo captures o ajustes según cliente).")
+
         if df_inv.empty:
             st.info("No hay productos registrados en el inventario.")
         else:
@@ -522,12 +524,6 @@ with tab_inv:
                 ).strip().lower()
             with f3:
                 solo_criticos = st.checkbox("Solo stock <= 3", value=False, key="chk_stock_critico")
-                calc_auto = st.checkbox(
-                    "Precio = Costo × 1.60",
-                    value=False,
-                    help="Aplica margen 1.60 al guardar.",
-                    key="chk_calc_auto_inv",
-                )
 
             df_vista = df_inv.copy()
             if fam_sel != "Todas las Familias":
@@ -569,9 +565,6 @@ with tab_inv:
                     st.error("Clave incorrecta.")
                 else:
                     edit_norm = normalizar_df_inv(df_edit)
-                    if calc_auto:
-                        edit_norm["Precio Venta"] = (edit_norm["Costo"] * 1.60).round(2)
-
                     idx_mostrados = set(df_vista.index)
                     df_no_mostrados = df_inv[~df_inv.index.isin(idx_mostrados)]
                     df_merged = normalizar_df_inv(pd.concat([df_no_mostrados, edit_norm], ignore_index=True))
@@ -591,6 +584,64 @@ with tab_inv:
                         st.success("Inventario actualizado y guardado.")
                         st.rerun()
 
+            st.divider()
+            with st.expander("Ajustar Precios por Familia o Códigos (Con Clave)", expanded=False):
+                st.caption("Aplica un factor sobre Costo únicamente a las Familias o Códigos seleccionados.")
+                modo_regla = st.radio(
+                    "Aplicar por:",
+                    ["Familia", "Códigos (SKU)"],
+                    horizontal=True,
+                    key="rb_modo_regla_precio",
+                )
+                r1, r2 = st.columns([2, 1])
+                with r1:
+                    if modo_regla == "Familia":
+                        fams = sorted([str(f).strip() for f in df_inv["Familia"].unique() if str(f).strip()])
+                        objetivos = st.multiselect("Selecciona Familia(s):", options=fams, key="ms_fams_precio")
+                    else:
+                        skus = sorted([str(c).strip() for c in df_inv["Código"].unique() if str(c).strip()])
+                        objetivos = st.multiselect("Selecciona Código(s) / SKU:", options=skus, key="ms_skus_precio")
+                with r2:
+                    factor_pct = st.number_input(
+                        "Factor (ej. 1.60 = +60%)",
+                        min_value=0.10,
+                        max_value=10.00,
+                        value=1.60,
+                        step=0.05,
+                        format="%.2f",
+                        key="num_factor_precio",
+                    )
+                    solo_sin_precio = st.checkbox(
+                        "Solo si Precio Venta == $0.00",
+                        value=False,
+                        key="chk_solo_sin_precio",
+                    )
+
+                pwd_regla = st.text_input("Clave de autorización:", type="password", key="pwd_regla_precio")
+                if st.button("Aplicar factor de precio", type="primary", key="btn_aplicar_regla_precio"):
+                    if pwd_regla != ADMIN_PASSWORD:
+                        st.error("Clave incorrecta.")
+                    elif not objetivos:
+                        st.warning("Selecciona al menos una Familia o un Código.")
+                    else:
+                        df_upd = normalizar_df_inv(df_inv).copy()
+                        if modo_regla == "Familia":
+                            objetivos_up = {str(x).strip().upper() for x in objetivos}
+                            mascara = df_upd["Familia"].astype(str).str.strip().str.upper().isin(objetivos_up)
+                        else:
+                            objetivos_up = {str(x).strip().upper() for x in objetivos}
+                            mascara = df_upd["Código"].astype(str).str.strip().str.upper().isin(objetivos_up)
+
+                        if solo_sin_precio:
+                            mascara = mascara & (df_upd["Precio Venta"] <= 0)
+
+                        df_upd.loc[mascara, "Precio Venta"] = (df_upd.loc[mascara, "Costo"] * float(factor_pct)).round(2)
+
+                        if guardar_inventario(df_upd, FILE_INV):
+                            st.session_state["df_inv"] = df_upd
+                            st.success(f"Precio Venta actualizado en {int(mascara.sum())} artículo(s) con factor {factor_pct:.2f}.")
+                            st.rerun()
+
     with tab_i2:
         st.subheader("Registrar Producto Manualmente")
         familias_sug = sorted([str(f).strip() for f in df_inv["Familia"].unique() if str(f).strip()]) if not df_inv.empty else []
@@ -608,8 +659,7 @@ with tab_inv:
             with n2:
                 n_stock = st.number_input("Stock Inicial", min_value=0.0, step=1.0, value=0.0, format="%.2f")
                 n_costo = st.number_input("Costo de Compra ($)", min_value=0.0, step=10.0, value=0.0, format="%.2f")
-                sug_precio = round(n_costo * 1.60, 2) if n_costo > 0 else 0.0
-                n_precio = st.number_input("Precio de Venta ($)", min_value=0.0, step=10.0, value=sug_precio, format="%.2f")
+                n_precio = st.number_input("Precio de Venta ($)", min_value=0.0, step=10.0, value=0.0, format="%.2f")
 
             pwd_nuevo = st.text_input("Clave de autorización:", type="password", key="pwd_nuevo_inv")
             if st.form_submit_button("Guardar producto", type="primary"):
