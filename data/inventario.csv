@@ -1,6 +1,6 @@
 ﻿Código,Producto,Familia,Stock,Costo,Precio Venta
 SKU-001,Filtro Cabina A/C,Filtros,15.0,120.0,350.0
-GAS-134A,Refrigerante R134a,Refrigerantes,8.0,156.25,2320.0
+GAS-134A,Refrigerante R134a,Refrigerantes,8.0,156.25,250.0
 VM-0853C,Válvula Mecanica,Válvulas,4.0,150.0,300.0
 VM-10471,Válvula Mecanica,Válvulas,5.0,180.0,360.0
 VE-10489,Válvula Electo Mecanica,Válvulas,1.0,470.0,850.0
