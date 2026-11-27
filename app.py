@@ -26,6 +26,7 @@ st.set_page_config(page_title="Taller Olachea - App", layout="wide")
 st.title("Taller Olachea — Sistema de Gestión")
 
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "1234") if hasattr(st, "secrets") else "1234"
+LOGO_PATH = "logo_taller.png"
 
 if "df_serv_prev" not in st.session_state:
     st.session_state["df_serv_prev"] = cargar_servicios_prev(FILE_SERV_PREV)
@@ -399,6 +400,11 @@ with tab_ticket:
 
     if st.session_state["ticket_actual"]:
         st.divider()
+        try:
+            st.image(LOGO_PATH, width=180)
+        except Exception:
+            st.caption(f"No se encontró `{LOGO_PATH}` en el repositorio.")
+
         st.code(st.session_state["ticket_actual"], language="text")
         st.download_button(
             label="Descargar ticket (.txt)",
@@ -706,96 +712,4 @@ with tab_inv:
             type=["csv", "xlsx"],
             key="uploader_codigos_custom",
         )
-        if file_codigos is not None:
-            try:
-                df_subida = _leer_archivo_inv(file_codigos)
-                st.dataframe(df_subida.head(10), width="stretch", hide_index=True)
-
-                pwd_subida = st.text_input("Clave de autorización:", type="password", key="pwd_subida_codigos")
-                if st.button("Importar e integrar códigos", type="primary", key="btn_importar_inv"):
-                    if pwd_subida != ADMIN_PASSWORD:
-                        st.error("Clave incorrecta.")
-                    elif "Código" not in df_subida.columns:
-                        st.error("No se encontró columna de Código/SKU en el archivo.")
-                    else:
-                        for col_num in ["Stock", "Costo", "Precio Venta"]:
-                            if col_num in df_subida.columns:
-                                df_subida[col_num] = pd.to_numeric(
-                                    df_subida[col_num].astype(str).str.replace("$", "", regex=False).str.replace(",", "", regex=False).str.strip(),
-                                    errors="coerce",
-                                )
-                        if "Producto" not in df_subida.columns:
-                            df_subida["Producto"] = "Sin Nombre"
-                        if "Familia" not in df_subida.columns:
-                            df_subida["Familia"] = "General"
-
-                        df_subida["Código"] = df_subida["Código"].fillna("").astype(str).str.strip().str.upper()
-                        df_subida["Producto"] = df_subida["Producto"].fillna("Sin Nombre").astype(str).str.strip()
-                        df_subida["Familia"] = df_subida["Familia"].fillna("General").astype(str).str.strip()
-                        df_subida.loc[df_subida["Familia"] == "", "Familia"] = "General"
-                        df_subida = df_subida[df_subida["Código"] != ""].drop_duplicates(subset=["Código"], keep="last")
-
-                        base_idx = normalizar_df_inv(df_inv).drop_duplicates(subset=["Código"], keep="last").set_index("Código")
-                        sub_idx = df_subida.reindex(columns=[c for c in COLS_INV if c != "Código"]).assign(Código=df_subida["Código"]).set_index("Código")
-
-                        base_idx.update(sub_idx)
-                        nuevos = sub_idx[~sub_idx.index.isin(base_idx.index)]
-                        df_res = normalizar_df_inv(pd.concat([base_idx, nuevos]).reset_index())
-
-                        if guardar_inventario(df_res, FILE_INV):
-                            st.session_state["df_inv"] = df_res
-                            st.success(f"Integración completada ({len(sub_idx)} códigos procesados).")
-                            st.rerun()
-            except Exception as e:
-                st.error(f"Error al procesar archivo: {e}")
-
-    with tab_i4:
-        st.subheader("Eliminar Producto")
-        if df_inv.empty:
-            st.info("No hay productos para eliminar.")
-        else:
-            opciones = [f"{r['Código']} | {r['Producto']} (Stock: {r['Stock']})" for _, r in df_inv.iterrows()]
-            sel_borrar = st.selectbox("Selecciona producto a eliminar:", opciones, key="sb_borrar_prod_tab4")
-            pwd_borrar = st.text_input("Clave de autorización:", type="password", key="pwd_borrar_input_tab4")
-
-            if st.button("Eliminar producto", type="primary", key="btn_borrar_inv_t4"):
-                if pwd_borrar != ADMIN_PASSWORD:
-                    st.error("Clave incorrecta.")
-                else:
-                    cod_borrar = sel_borrar.split(" | ")[0].strip().upper()
-                    df_restante = normalizar_df_inv(
-                        df_inv[df_inv["Código"].astype(str).str.strip().str.upper() != cod_borrar]
-                    )
-                    if guardar_inventario(df_restante, FILE_INV):
-                        st.session_state["df_inv"] = df_restante
-                        st.success(f"Producto `{cod_borrar}` eliminado.")
-                        st.rerun()
-
-    with tab_i5:
-        st.subheader("Importar desde Excel / CSV (Reemplazo / Fusión por SKU)")
-        st.caption("Normaliza columnas automáticamente y conserva el último registro por Código/SKU.")
-        file_gen = st.file_uploader("Selecciona archivo (.csv o .xlsx):", type=["csv", "xlsx"], key="uploader_gen_almacen_tab5")
-
-        if file_gen is not None:
-            try:
-                df_gen = _leer_archivo_inv(file_gen)
-                st.dataframe(df_gen.head(10), width="stretch", hide_index=True)
-                pwd_gen = st.text_input("Clave de autorización:", type="password", key="pwd_carga_gen_t5")
-
-                if st.button("Fusionar al inventario", type="primary", key="btn_cargar_inv_t5"):
-                    if pwd_gen != ADMIN_PASSWORD:
-                        st.error("Clave incorrecta.")
-                    elif "Código" not in df_gen.columns:
-                        st.error("No se encontró columna de Código/SKU en el archivo.")
-                    else:
-                        df_gen_norm = normalizar_df_inv(df_gen)
-                        df_gen_norm = df_gen_norm[df_gen_norm["Código"] != ""]
-                        df_fusion = normalizar_df_inv(
-                            pd.concat([df_inv, df_gen_norm], ignore_index=True)
-                        ).drop_duplicates(subset=["Código"], keep="last")
-                        if guardar_inventario(df_fusion, FILE_INV):
-                            st.session_state["df_inv"] = df_fusion
-                            st.success("Inventario fusionado y guardado.")
-                            st.rerun()
-            except Exception as e:
-                st.error(f"Error al importar archivo: {e}")
+        if file_codigos is not None
