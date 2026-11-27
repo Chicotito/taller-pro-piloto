@@ -123,6 +123,39 @@ def _es_duplicado_reciente_vt(df_existente: pd.DataFrame, nuevo: dict) -> bool:
     return True
 
 
+def _mapear_columnas_inv(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df = df_raw.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    renombres = {}
+    for col in df.columns:
+        low = col.lower()
+        if any(k in low for k in ["cód", "cod", "sku", "clave", "id"]):
+            renombres[col] = "Código"
+        elif any(k in low for k in ["prod", "desc", "nombre", "artículo", "articulo"]):
+            renombres[col] = "Producto"
+        elif any(k in low for k in ["fam", "cat", "lin", "línea", "linea"]):
+            renombres[col] = "Familia"
+        elif any(k in low for k in ["stock", "cant", "exist"]):
+            renombres[col] = "Stock"
+        elif "cost" in low:
+            renombres[col] = "Costo"
+        elif any(k in low for k in ["precio", "venta", "p.u", "pu"]):
+            renombres[col] = "Precio Venta"
+    return df.rename(columns=renombres)
+
+
+def _leer_archivo_inv(archivo) -> pd.DataFrame:
+    if archivo.name.lower().endswith(".csv"):
+        try:
+            df = pd.read_csv(archivo, dtype=str, encoding="utf-8")
+        except UnicodeDecodeError:
+            archivo.seek(0)
+            df = pd.read_csv(archivo, dtype=str, encoding="latin-1")
+    else:
+        df = pd.read_excel(archivo, dtype=str)
+    return _mapear_columnas_inv(df)
+
+
 tab_sp, tab_ticket, tab_reporte, tab_inv = st.tabs([
     "Servicios Preventivos",
     "Ticket de Venta",
@@ -144,7 +177,7 @@ with tab_sp:
         df_actual = pd.DataFrame(columns=COLS_SP)
 
     st.subheader("Registros actuales en CSV")
-    st.dataframe(df_actual, use_container_width=True, hide_index=True)
+    st.dataframe(df_actual, width="stretch", hide_index=True)
 
     def _limpios(col_name: str) -> list[str]:
         if df_actual is None or df_actual.empty or col_name not in df_actual.columns:
@@ -416,3 +449,303 @@ with tab_reporte:
         df_tabla = df_dia
     elif vista_modo == "Venta mensual":
         df_tabla = df_mes
+    else:
+        df_tabla = df_rep.drop(columns=["_fecha", "_mes"])
+
+    st.dataframe(df_tabla, width="stretch", hide_index=True)
+
+# ==========================================
+# PESTAÑA 4: CONTROL DE INVENTARIO
+# ==========================================
+with tab_inv:
+    st.caption(f"Archivo de datos: `{FILE_INV}`")
+
+    _, col_rec = st.columns([4, 1])
+    with col_rec:
+        if st.button("Forzar recarga", key="btn_recarga_inv", width="stretch"):
+            try:
+                st.session_state["df_inv"] = normalizar_df_inv(cargar_inventario(FILE_INV))
+                st.success("Inventario recargado desde almacenamiento.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al recargar inventario: {e}")
+
+    try:
+        raw_inv = st.session_state.get("df_inv")
+        if raw_inv is None or (isinstance(raw_inv, pd.DataFrame) and raw_inv.empty):
+            raw_inv = cargar_inventario(FILE_INV)
+        df_inv = normalizar_df_inv(raw_inv)
+        if not set(COLS_INV).issubset(df_inv.columns):
+            df_inv = pd.DataFrame(columns=COLS_INV)
+        st.session_state["df_inv"] = df_inv
+    except Exception as e:
+        st.warning(f"No se pudo leer inventario ({e}). Se iniciará tabla vacía.")
+        df_inv = pd.DataFrame(columns=COLS_INV)
+
+    total_skus = len(df_inv)
+    sin_stock = int((df_inv["Stock"] <= 0).sum()) if not df_inv.empty else 0
+    bajo_stock = int(((df_inv["Stock"] > 0) & (df_inv["Stock"] <= 3)).sum()) if not df_inv.empty else 0
+    val_costo = float((df_inv["Stock"] * df_inv["Costo"]).sum()) if not df_inv.empty else 0.0
+    val_venta = float((df_inv["Stock"] * df_inv["Precio Venta"]).sum()) if not df_inv.empty else 0.0
+
+    im1, im2, im3, im4, im5 = st.columns(5)
+    im1.metric("SKUs registrados", total_skus)
+    im2.metric("Sin stock (0)", sin_stock)
+    im3.metric("Stock bajo (<=3)", bajo_stock)
+    im4.metric("Valor inventario (Costo)", f"${val_costo:,.2f}")
+    im5.metric("Valor inventario (Venta)", f"${val_venta:,.2f}")
+
+    tab_i1, tab_i2, tab_i3, tab_i4, tab_i5 = st.tabs([
+        "Consultar / Editar",
+        "Registrar Producto",
+        "Carga Masiva Códigos",
+        "Eliminar Producto",
+        "Importar Excel / CSV",
+    ])
+
+    with tab_i1:
+        st.subheader("Consultar y Editar Inventario")
+        if df_inv.empty:
+            st.info("No hay productos registrados en el inventario.")
+        else:
+            familias_disp = ["Todas las Familias"] + sorted(
+                [str(f).strip() for f in df_inv["Familia"].unique() if str(f).strip()]
+            )
+            f1, f2, f3 = st.columns([2, 2, 1])
+            with f1:
+                fam_sel = st.selectbox("Filtrar por Familia", familias_disp, key="sb_filtro_familia")
+            with f2:
+                q_inv = st.text_input(
+                    "Buscar por Código, Producto o Familia",
+                    placeholder="Ej. R134A, Filtro, Compresor",
+                    key="txt_buscar_inv",
+                ).strip().lower()
+            with f3:
+                solo_criticos = st.checkbox("Solo stock <= 3", value=False, key="chk_stock_critico")
+                calc_auto = st.checkbox(
+                    "Precio = Costo × 1.60",
+                    value=False,
+                    help="Aplica margen 1.60 al guardar.",
+                    key="chk_calc_auto_inv",
+                )
+
+            df_vista = df_inv.copy()
+            if fam_sel != "Todas las Familias":
+                df_vista = df_vista[df_vista["Familia"].str.upper() == fam_sel.upper()]
+            if solo_criticos:
+                df_vista = df_vista[df_vista["Stock"] <= 3]
+            if q_inv:
+                df_vista = df_vista[
+                    df_vista["Código"].str.lower().str.contains(q_inv, na=False)
+                    | df_vista["Producto"].str.lower().str.contains(q_inv, na=False)
+                    | df_vista["Familia"].str.lower().str.contains(q_inv, na=False)
+                ]
+
+            df_edit = st.data_editor(
+                df_vista.reset_index(drop=True),
+                column_config={
+                    "Código": st.column_config.TextColumn("Código / SKU", required=True),
+                    "Producto": st.column_config.TextColumn("Producto", required=True),
+                    "Familia": st.column_config.TextColumn("Familia / Línea", required=True),
+                    "Stock": st.column_config.NumberColumn("Stock", min_value=0.0, step=1.0, format="%.2f"),
+                    "Costo": st.column_config.NumberColumn("Costo ($)", min_value=0.0, format="$%,.2f"),
+                    "Precio Venta": st.column_config.NumberColumn("Precio Venta ($)", min_value=0.0, format="$%,.2f"),
+                },
+                width="stretch",
+                hide_index=True,
+                key="editor_inv",
+            )
+
+            p1, p2 = st.columns([2, 1])
+            with p1:
+                pwd_edit = st.text_input("Clave de modificación:", type="password", key="pwd_edit_inv")
+            with p2:
+                st.write("")
+                st.write("")
+                btn_guardar = st.button("Guardar cambios", type="primary", key="btn_guardar_inv_t1", width="stretch")
+
+            if btn_guardar:
+                if pwd_edit != ADMIN_PASSWORD:
+                    st.error("Clave incorrecta.")
+                else:
+                    edit_norm = normalizar_df_inv(df_edit)
+                    if calc_auto:
+                        edit_norm["Precio Venta"] = (edit_norm["Costo"] * 1.60).round(2)
+
+                    idx_mostrados = set(df_vista.index)
+                    df_no_mostrados = df_inv[~df_inv.index.isin(idx_mostrados)]
+                    df_merged = normalizar_df_inv(pd.concat([df_no_mostrados, edit_norm], ignore_index=True))
+
+                    validos = df_merged[
+                        (df_merged["Código"] != "")
+                        & (df_merged["Código"].str.lower() != "nan")
+                        & (~df_merged["Código"].str.startswith("#"))
+                    ]
+                    dups = validos["Código"].str.upper().value_counts()
+                    dups = dups[dups > 1].index.tolist()
+
+                    if dups:
+                        st.error(f"Código/SKU duplicado detectado: `{dups[0]}`. Corrígelo antes de guardar.")
+                    elif guardar_inventario(validos, FILE_INV):
+                        st.session_state["df_inv"] = validos
+                        st.success("Inventario actualizado y guardado.")
+                        st.rerun()
+
+    with tab_i2:
+        st.subheader("Registrar Producto Manualmente")
+        familias_sug = sorted([str(f).strip() for f in df_inv["Familia"].unique() if str(f).strip()]) if not df_inv.empty else []
+
+        with st.form("form_nuevo_prod", clear_on_submit=True):
+            n1, n2 = st.columns(2)
+            with n1:
+                n_codigo = st.text_input("Código / SKU *").strip().upper()
+                n_producto = st.text_input("Nombre del Producto *").strip()
+                n_familia = st.text_input(
+                    "Familia / Categoría",
+                    value="General",
+                    help="Familias existentes: " + (", ".join(familias_sug[:8]) if familias_sug else "General"),
+                ).strip()
+            with n2:
+                n_stock = st.number_input("Stock Inicial", min_value=0.0, step=1.0, value=0.0, format="%.2f")
+                n_costo = st.number_input("Costo de Compra ($)", min_value=0.0, step=10.0, value=0.0, format="%.2f")
+                sug_precio = round(n_costo * 1.60, 2) if n_costo > 0 else 0.0
+                n_precio = st.number_input("Precio de Venta ($)", min_value=0.0, step=10.0, value=sug_precio, format="%.2f")
+
+            pwd_nuevo = st.text_input("Clave de autorización:", type="password", key="pwd_nuevo_inv")
+            if st.form_submit_button("Guardar producto", type="primary"):
+                if pwd_nuevo != ADMIN_PASSWORD:
+                    st.error("Clave incorrecta.")
+                elif not n_codigo or not n_producto:
+                    st.error("Captura **Código / SKU** y **Nombre del Producto**.")
+                elif not df_inv.empty and (df_inv["Código"].str.upper() == n_codigo).any():
+                    st.error(f"El código `{n_codigo}` ya existe en el inventario.")
+                else:
+                    fila = pd.DataFrame([{
+                        "Código": n_codigo,
+                        "Producto": n_producto,
+                        "Familia": n_familia or "General",
+                        "Stock": float(n_stock),
+                        "Costo": float(n_costo),
+                        "Precio Venta": float(n_precio),
+                    }], columns=COLS_INV)
+                    df_act = normalizar_df_inv(pd.concat([df_inv, fila], ignore_index=True))
+                    if guardar_inventario(df_act, FILE_INV):
+                        st.session_state["df_inv"] = df_act
+                        st.success(f"Producto `{n_codigo}` — {n_producto} guardado.")
+                        st.rerun()
+
+    with tab_i3:
+        st.subheader("Carga Masiva de Códigos")
+        st.caption("Actualiza existentes por Código/SKU e inserta códigos nuevos sin borrar el resto del inventario.")
+
+        plantilla_csv = (
+            "Código,Producto,Familia,Stock,Costo,Precio Venta\n"
+            "SKU-001,Filtro Cabina A/C,Filtros,15,120.00,192.00\n"
+            "GAS-134A,Refrigerante R134a,Refrigerantes,8,1450.00,2320.00\n"
+        )
+        st.download_button(
+            "Descargar plantilla CSV",
+            plantilla_csv.encode("utf-8"),
+            "plantilla_inventario.csv",
+            "text/csv",
+            key="dl_plantilla_inv",
+        )
+
+        file_codigos = st.file_uploader(
+            "Selecciona archivo (.csv o .xlsx):",
+            type=["csv", "xlsx"],
+            key="uploader_codigos_custom",
+        )
+        if file_codigos is not None:
+            try:
+                df_subida = _leer_archivo_inv(file_codigos)
+                st.dataframe(df_subida.head(10), width="stretch", hide_index=True)
+
+                pwd_subida = st.text_input("Clave de autorización:", type="password", key="pwd_subida_codigos")
+                if st.button("Importar e integrar códigos", type="primary", key="btn_importar_inv"):
+                    if pwd_subida != ADMIN_PASSWORD:
+                        st.error("Clave incorrecta.")
+                    elif "Código" not in df_subida.columns:
+                        st.error("No se encontró columna de Código/SKU en el archivo.")
+                    else:
+                        for col_num in ["Stock", "Costo", "Precio Venta"]:
+                            if col_num in df_subida.columns:
+                                df_subida[col_num] = pd.to_numeric(
+                                    df_subida[col_num].astype(str).str.replace("$", "", regex=False).str.replace(",", "", regex=False).str.strip(),
+                                    errors="coerce",
+                                )
+                        if "Producto" not in df_subida.columns:
+                            df_subida["Producto"] = "Sin Nombre"
+                        if "Familia" not in df_subida.columns:
+                            df_subida["Familia"] = "General"
+
+                        df_subida["Código"] = df_subida["Código"].fillna("").astype(str).str.strip().str.upper()
+                        df_subida["Producto"] = df_subida["Producto"].fillna("Sin Nombre").astype(str).str.strip()
+                        df_subida["Familia"] = df_subida["Familia"].fillna("General").astype(str).str.strip()
+                        df_subida.loc[df_subida["Familia"] == "", "Familia"] = "General"
+                        df_subida = df_subida[df_subida["Código"] != ""].drop_duplicates(subset=["Código"], keep="last")
+
+                        base_idx = normalizar_df_inv(df_inv).drop_duplicates(subset=["Código"], keep="last").set_index("Código")
+                        sub_idx = df_subida.reindex(columns=[c for c in COLS_INV if c != "Código"]).assign(Código=df_subida["Código"]).set_index("Código")
+
+                        base_idx.update(sub_idx)
+                        nuevos = sub_idx[~sub_idx.index.isin(base_idx.index)]
+                        df_res = normalizar_df_inv(pd.concat([base_idx, nuevos]).reset_index())
+
+                        if guardar_inventario(df_res, FILE_INV):
+                            st.session_state["df_inv"] = df_res
+                            st.success(f"Integración completada ({len(sub_idx)} códigos procesados).")
+                            st.rerun()
+            except Exception as e:
+                st.error(f"Error al procesar archivo: {e}")
+
+    with tab_i4:
+        st.subheader("Eliminar Producto")
+        if df_inv.empty:
+            st.info("No hay productos para eliminar.")
+        else:
+            opciones = [f"{r['Código']} | {r['Producto']} (Stock: {r['Stock']})" for _, r in df_inv.iterrows()]
+            sel_borrar = st.selectbox("Selecciona producto a eliminar:", opciones, key="sb_borrar_prod_tab4")
+            pwd_borrar = st.text_input("Clave de autorización:", type="password", key="pwd_borrar_input_tab4")
+
+            if st.button("Eliminar producto", type="primary", key="btn_borrar_inv_t4"):
+                if pwd_borrar != ADMIN_PASSWORD:
+                    st.error("Clave incorrecta.")
+                else:
+                    cod_borrar = sel_borrar.split(" | ")[0].strip().upper()
+                    df_restante = normalizar_df_inv(
+                        df_inv[df_inv["Código"].astype(str).str.strip().str.upper() != cod_borrar]
+                    )
+                    if guardar_inventario(df_restante, FILE_INV):
+                        st.session_state["df_inv"] = df_restante
+                        st.success(f"Producto `{cod_borrar}` eliminado.")
+                        st.rerun()
+
+    with tab_i5:
+        st.subheader("Importar desde Excel / CSV (Reemplazo / Fusión por SKU)")
+        st.caption("Normaliza columnas automáticamente y conserva el último registro por Código/SKU.")
+        file_gen = st.file_uploader("Selecciona archivo (.csv o .xlsx):", type=["csv", "xlsx"], key="uploader_gen_almacen_tab5")
+
+        if file_gen is not None:
+            try:
+                df_gen = _leer_archivo_inv(file_gen)
+                st.dataframe(df_gen.head(10), width="stretch", hide_index=True)
+                pwd_gen = st.text_input("Clave de autorización:", type="password", key="pwd_carga_gen_t5")
+
+                if st.button("Fusionar al inventario", type="primary", key="btn_cargar_inv_t5"):
+                    if pwd_gen != ADMIN_PASSWORD:
+                        st.error("Clave incorrecta.")
+                    elif "Código" not in df_gen.columns:
+                        st.error("No se encontró columna de Código/SKU en el archivo.")
+                    else:
+                        df_gen_norm = normalizar_df_inv(df_gen)
+                        df_gen_norm = df_gen_norm[df_gen_norm["Código"] != ""]
+                        df_fusion = normalizar_df_inv(
+                            pd.concat([df_inv, df_gen_norm], ignore_index=True)
+                        ).drop_duplicates(subset=["Código"], keep="last")
+                        if guardar_inventario(df_fusion, FILE_INV):
+                            st.session_state["df_inv"] = df_fusion
+                            st.success("Inventario fusionado y guardado.")
+                            st.rerun()
+            except Exception as e:
+                st.error(f"Error al importar archivo: {e}")
